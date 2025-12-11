@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automated Toolbox QC Checklist</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f3f4f6;
+        }
+        
+        /* Fixed main container size */
+        .main-container {
+            max-width: 1000px;
+            margin: 20px auto;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+            padding: 20px;
+        }
+
+        /* Custom Checkbox */
+        .qc-checkbox {
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 0.25rem;
+            border: 2px solid #d1d5db;
+            cursor: pointer;
+        }
+        .qc-checkbox:checked {
+            background-color: #2563eb;
+            border-color: #2563eb;
+        }
+
+        /* Tab Styles */
+        .tab-button {
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+            font-weight: 500;
+        }
+        .tab-button.active {
+            border-bottom: 3px solid #ef4444; /* Red border */
+            color: #ef4444;
+            background-color: #fef2f2;
+        }
+
+        /* IMPORTANT: PDF Print Styles - Simulate A4 and control breaks */
+        .a4-page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: white;
+            padding: 15mm;
+        }
+        
+        .avoid-page-break {
+            /* Ensures table rows (checklist items) and sections stay together */
+            break-inside: avoid;
+        }
+
+        @media print {
+            /* Hide non-print elements */
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background: white;
+            }
+            /* Reset for PDF generator */
+            .a4-page {
+                box-shadow: none;
+                width: 100%;
+                min-height: auto; 
+                padding: 0;
+            }
+            /* Styling for the Photo Appendix pages */
+            .photo-appendix-page {
+                page-break-before: always;
+                min-height: 297mm; /* Ensure full page height for A4 */
+                padding: 15mm;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .photo-container {
+                display: block;
+                max-width: 180mm; /* Fit inside margins */
+                max-height: 200mm;
+                object-fit: contain;
+                width: 100%;
+                height: 100%;
+            }
+            /* Hide the thumbnail preview in the main checklist report */
+            div[id^="preview-"] {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Control Panel (Hidden in Print/PDF) -->
+    <div class="fixed top-4 right-4 z-50 flex gap-2 no-print">
+        <button onclick="clearForm()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded shadow flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+              <path fill-rule="evenodd" d="M3 10a7 7 0 1114 0 7 7 0 01-14 0zm7-9a8 8 0 100 16 8 8 0 000-16z" clip-rule="evenodd" />
+            </svg>
+            Clear Form
+        </button>
+        <button onclick="generatePDF()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded shadow flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+            Download PDF
+        </button>
+    </div>
+
+    <!-- Camera Modal -->
+    <div id="camera-modal" class="fixed inset-0 z-[100] bg-black bg-opacity-95 hidden flex flex-col items-center justify-center no-print">
+        <div class="w-full max-w-2xl bg-black p-4 rounded flex flex-col items-center relative">
+            <h3 class="text-white mb-2 font-bold">Take Photo</h3>
+            <video id="camera-feed" autoplay playsinline class="w-full max-h-[70vh] object-contain bg-gray-900 border border-gray-700 rounded"></video>
+            <canvas id="camera-canvas" class="hidden"></canvas>
+            
+            <div class="flex gap-6 mt-6 w-full justify-center">
+                <button onclick="closeCamera()" class="bg-gray-600 hover:bg-gray-500 text-white px-6 py-3 rounded-full font-bold">Cancel</button>
+                <button onclick="takeSnapshot()" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-full font-bold flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Capture
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-container">
+        
+        <!-- QC Header Inputs (Visible on Screen) -->
+        <div class="bg-gray-50 p-4 rounded border border-gray-200 mb-6 no-print">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">QC Information</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="testerName" class="block text-sm font-bold text-gray-700 mb-1">Tester Name / Checked By</label>
+                    <input type="text" id="testerName" class="w-full p-2 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500">
+                </div>
+                <div>
+                    <label for="reportDate" class="block text-sm font-bold text-gray-700 mb-1">Date</label>
+                    <input type="date" id="reportDate" class="w-full p-2 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500">
+                </div>
+                <div>
+                    <label for="cabinetSn" class="block text-sm font-bold text-gray-700 mb-1">Cabinet S/N</label>
+                    <input type="text" id="cabinetSn" class="w-full p-2 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500">
+                </div>
+                 <div>
+                    <label for="controllerSn" class="block text-sm font-bold text-gray-700 mb-1">Controller S/N</label>
+                    <input type="text" id="controllerSn" class="w-full p-2 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="flex border-b border-gray-200 mb-6 no-print" id="tab-navigation">
+            <!-- Tabs will be generated here -->
+        </div>
+
+        <!-- Report Content Container (for PDF generation content preparation) -->
+        <div id="report-content-wrapper">
+            <!-- The actual checklist content for the active tab is rendered here -->
+        </div>
+
+        <!-- Final Comments (Visible on Screen) -->
+        <div class="mt-8 pt-4 border-t border-gray-300 no-print">
+            <h3 class="font-bold text-lg mb-2 text-gray-800">Final Comments</h3>
+            <textarea id="finalComments" rows="4" class="w-full p-3 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500"></textarea>
+        </div>
+
+
+    </div>
+
+    <script>
+        // Data Structure for Checklist
+        const checklistData = [
+            {
+                id: "drawer",
+                title: "IN-LINE QC - DRAWER ASSEMBLY",
+                items: [
+                    { no: "1.0", desc: "Inspection of the Drawer's Control Compartment.", type: "header" },
+                    { no: "1.1", desc: "All flat cables have been organized using fixing clips as per specifications.", photo: true },
+                    { no: "1.2", desc: "RGB LED cable has been organized using zip ties as per specifications." },
+                    { no: "1.3", desc: "All the shaft collars are secured in place, set screws are tightened, no back/forth movement." },
+                    { no: "1.4", desc: "Drawer Controller's Configuration Switch is only enabled for the required Drawer.", photo: true },
+                    { no: "1.5", desc: "RGB LED fixing brackets are aligned with outer edge of handle and not sticking out." },
+                    { no: "1.6", desc: "RGB LED fixing brackets are secured with (4) screws and tightened." },
+                    { no: "1.7", desc: "Drawer Controller is secured with (4) screws to (4) Hex Standoffs." },
+                    { no: "2.0", desc: "Inspection of the bottom of the Drawer.", type: "header" },
+                    { no: "2.1", desc: "Horizontal Latch Assemblies are mounted using (3) screws per row." },
+                    { no: "2.2", desc: "Drawer Controller is attached with (4) screws from the bottom." },
+                    { no: "3.0", desc: "Drawer Controller Compartment Cover is secured with (3) screws." },
+                    { no: "4.0", desc: "Inspection of the back of the Drawer.", type: "header" },
+                    { no: "4.1", desc: "Nyloc Flange Nuts (2) used to secure Drawer Latch striker." },
+                    { no: "4.2", desc: "Nyloc Flange Nuts (2) used to secure End Rod Clip." },
+                    { no: "5.0", desc: "All hardware mentioned above and assembly overall is as per specifications." }
+                ]
+            },
+            {
+                id: "cable",
+                title: "IN-LINE QC - CABLE SPRING ASSEMBLY",
+                items: [
+                    { no: "1.0", desc: "Inspection of the Cable Spring Assembly.", type: "header" },
+                    { no: "1.1", desc: "All cable ties installed at every mounting position (every slot)." },
+                    { no: "1.2", desc: "Correct cable lengths used (6ft for 3\" Drawers, 7ft for 6\" Drawers)." },
+                    { no: "1.3", desc: "Entire Cable Spring Assembly.", photo: true }
+                ]
+            },
+            {
+                id: "chassis",
+                title: "IN-LINE QC - CHASSIS ASSEMBLY",
+                items: [
+                    { no: "1.0", desc: "Inspection of the back of the Cabinet before Back Cover mounted.", type: "header" },
+                    { no: "1.1", desc: "Control Unit ONLY: Network cable and coupler installed and connected to router." },
+                    { no: "1.2", desc: "Left side cable management completed (no missing zipties, no stress).", photo: true },
+                    { no: "1.3", desc: "Grounding wires installed (no paint on stud, washers placed correctly).", photo: true },
+                    { no: "1.4", desc: "Power Supply Terminal plastic cover is installed." },
+                    { no: "1.5", desc: "Power Supply Input Voltage Switch set to correct voltage (115/230)." },
+                    { no: "1.6", desc: "Nyloc Flange Nuts (2 per latch) used to secure Drawer Latches." },
+                    { no: "1.7", desc: "Connections between Drawer Latches and Latch Harness completed properly.", photo: true },
+                    { no: "1.8", desc: "Spring Bracket mounted and secured from both top and bottom." },
+                    { no: "1.9", desc: "Latch Harness runs in front of bottom Spring Bracket, secured with ties." },
+                    { no: "1.10", desc: "Connections between Latch Harness and data cables completed." },
+                    { no: "1.11", desc: "Black data cable (first top drawer) connected to Cabinet Controller (Blue RJ45)." },
+                    { no: "1.12", desc: "Black data cable (last bottom drawer) connected to Service Box top-right RJ45." },
+                    { no: "1.13", desc: "Black data cable from Cabinet Controller (Yellow RJ45) to Service Box top-left." },
+                    { no: "1.14", desc: "Inside bottom of cabinet clean of loose parts/debris." },
+                    { no: "1.15", desc: "DC Power cables have respective labels attached (12V, 24V)." },
+                    { no: "1.16", desc: "'High Voltage' label placed in respective position." },
+                    { no: "1.17", desc: "'Tip-Over Hazard' label placed in respective position." },
+                    { no: "1.18", desc: "'Service Box' label placed in respective position." },
+                    { no: "2.0", desc: "Inside liners mounted with (9) screws and washers per side." },
+                    { no: "3.0", desc: "Inspection of slides: Mounted with 4 screws, no missing bearings.", type: "header" },
+                    { no: "3.3", desc: "Front plastic stopper is not broken and secured." },
+                    { no: "4.0", desc: "Control Unit ONLY: Top Cable Channel inspection.", type: "header" },
+                    { no: "4.1", desc: "Spiral wrap used to organize cables in channel." },
+                    { no: "4.2", desc: "No cable/wrapping sticks out of channel." },
+                    { no: "4.3", desc: "Cable ties used to secure Top Cable Bundle to slots." }
+                ]
+            },
+            {
+                id: "podium",
+                title: "IN-LINE QC - MONITOR PODIUM ASSEMBLY",
+                items: [
+                    { no: "1.0", desc: "Inspection of Monitor Podium Assembly.", type: "header" },
+                    { no: "1.1", desc: "Monitor front is flush with front of housing." },
+                    { no: "1.2", desc: "Monitor mounted in place with (8) nuts." },
+                    { no: "1.3", desc: "Monitor Podium mounted with (4) screws and washers." },
+                    { no: "1.4", desc: "All cables labeled (NUC, Display, Network, USB, etc.)." },
+                    { no: "1.5", desc: "Cable management completed, no stress on cables." },
+                    { no: "1.6", desc: "USB Hub: Wireless Keyboard/Trackpad dongle connected." },
+                    { no: "1.7", desc: "Manual Key and Unlocking Tool bagged and attached inside." },
+                    { no: "1.8", desc: "No loose parts inside Monitor Podium.", photo: true }
+                ]
+            },
+            {
+                id: "final",
+                title: "FINAL QC",
+                items: [
+                    { no: "1.0", desc: "Before Back Cover: Nyloc Nuts (2) mount Cable Springs to back of Drawers." },
+                    { no: "1.0", desc: "After Back Cover: Inspection of top face of all drawers.", type: "header" },
+                    { no: "1.1", desc: "No scratches/dents on drawer handles." },
+                    { no: "1.2", desc: "No scratches/dents on back drawer flange." },
+                    { no: "1.3", desc: "No scratches/dents on compartment covers." },
+                    { no: "1.4", desc: "No scratches/dents on Drawer Controller Cover." },
+                    { no: "1.5", desc: "No back and forth movement in hinge rods." },
+                    { no: "1.6", desc: "Top view for every drawer.", photo: true },
+                    { no: "2.0", desc: "Inspection of front face of all drawers.", type: "header" },
+                    { no: "2.1", desc: "No scratches/dents on front corners." },
+                    { no: "2.2", desc: "No scratches/dents on front face." },
+                    { no: "2.3", desc: "Front view for every drawer.", photo: true },
+                    { no: "2.4", desc: "All screws at bottom present. (Photo Bottom View)", photo: true },
+                    { no: "2.5", desc: "All screws on left-hand side present. (Photo Left View)", photo: true },
+                    { no: "3.0", desc: "Inspection of Chassis.", type: "header" },
+                    { no: "3.1", desc: "Bottom Cover mounting brackets attached." },
+                    { no: "3.2", desc: "All leveling feet (4) attached." },
+                    { no: "4.0", desc: "Top of Cabinet clean, no scratches.", photo: true },
+                    { no: "5.0", desc: "Sides of Cabinet clean, no scratches (R & L sides).", photo: true },
+                    { no: "6.0", desc: "'Tip-over Hazard' label on Back Cover." },
+                    { no: "7.0", desc: "'Hazardous Voltage' label on Back Cover." },
+                    { no: "8.0", desc: "'Serial Number' label on Back Cover." },
+                    { no: "9.0", desc: "Back cover clean, no scratches.", photo: true },
+                    { no: "10.0", desc: "Overall front of cabinet.", photo: true },
+                    { no: "11.0", desc: "All hardware and assembly as per specifications." }
+                ]
+            }
+        ];
+
+        // Global State
+        let currentTabId = checklistData[0].id;
+        // Map for easy lookup of photo descriptions and storage of photo data
+        const photoData = new Map(); 
+        let currentCameraId = null;
+        let videoStream = null;
+
+        // --- Core Initialization ---
+
+        function initializeApp() {
+            initializeForm();
+            renderTabs();
+            // Render the first tab content
+            switchTab(currentTabId);
+        }
+
+        function initializeForm() {
+            // Set Date in the header input field
+            const today = new Date();
+            const dateString = today.toISOString().split('T')[0];
+            
+            // These elements are now guaranteed to exist in the HTML body
+            const reportDateInput = document.getElementById('reportDate');
+            if (reportDateInput) {
+                reportDateInput.value = dateString;
+            } else {
+                 console.error("Initialization Error: reportDate element not found.");
+            }
+        }
+
+        // --- Tab Logic ---
+
+        function renderTabs() {
+            const tabNav = document.getElementById('tab-navigation');
+            tabNav.innerHTML = '';
+            
+            checklistData.forEach(section => {
+                const button = document.createElement('button');
+                button.className = `tab-button ${section.id === currentTabId ? 'active' : ''}`;
+                button.textContent = section.title.split(' - ')[1] || section.title; // Use a shorter title for the tab
+                button.onclick = () => switchTab(section.id);
+                tabNav.appendChild(button);
+            });
+        }
+
+        function switchTab(newTabId) {
+            currentTabId = newTabId;
+            
+            // Update button active state
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const activeBtn = document.querySelector(`.tab-button:nth-child(${checklistData.findIndex(s => s.id === newTabId) + 1})`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            // Render the content of the new tab
+            renderChecklist(newTabId);
+        }
+
+        // --- Checklist Rendering ---
+
+        function renderChecklist(sectionId) {
+            const section = checklistData.find(s => s.id === sectionId);
+            if (!section) return;
+
+            const container = document.getElementById('report-content-wrapper');
+            // This is the on-screen display container
+            container.innerHTML = createChecklistHTML(section, true); 
+
+            // Restore the saved radio button states and photo previews for the newly rendered tab
+            restoreState(sectionId);
+        }
+
+        // Generates the HTML for the checklist section, reusable for both screen and PDF
+        function createChecklistHTML(section, isScreenView) {
+            const sectionClass = isScreenView ? '' : 'avoid-page-break'; // Only apply break avoid on the section level for PDF
+            
+            let html = `<div id="checklist-section-${section.id}" class="${sectionClass}">
+                <div class="bg-gray-800 text-white p-2 mb-2 rounded-t font-bold flex justify-between">
+                    <span>${section.title}</span>
+                    <span class="text-xs font-normal opacity-75 self-center">YES / NO</span>
+                </div>
+                <table class="w-full text-sm text-left text-gray-700 border-collapse">
+                    <tbody class="divide-y divide-gray-200 border border-gray-200">`;
+
+            section.items.forEach((item, index) => {
+                const uniqueId = `${section.id}-${item.no.replace(/\./g, '-')}`;
+                
+                if (item.type === 'header') {
+                    html += `<tr class="bg-gray-100 font-bold avoid-page-break">
+                        <td class="p-2 w-16 align-top border-r">${item.no}</td>
+                        <td class="p-2 border-r" colspan="3">${item.desc}</td>
+                    </tr>`;
+                } else {
+                    const savedPhoto = photoData.get(uniqueId);
+                    // Store description for PDF map, even if no photo is taken yet
+                    if (item.photo) {
+                        // Ensure a description placeholder is set in the map if it doesn't exist
+                        if (!photoData.has(uniqueId)) {
+                             photoData.set(uniqueId, { 
+                                description: `${section.title}: ${item.no}. ${item.desc}`, 
+                                dataUrl: ''
+                            });
+                        }
+                    }
+
+                    html += `<tr class="hover:bg-gray-50 avoid-page-break">
+                        <td class="p-2 w-16 align-top border-r font-medium">${item.no}</td>
+                        <td class="p-2 border-r">
+                            <div>${item.desc}</div>
+                            ${item.photo ? `
+                                <div class="mt-2 ${isScreenView ? 'no-print' : 'hidden'}">
+                                    <button onclick="startCamera('${uniqueId}')" class="inline-flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-full text-xs font-semibold transition cursor-pointer">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                        Take Photo
+                                    </button>
+                                </div>
+                                <div id="preview-${uniqueId}" data-description="${item.no}. ${item.desc}" class="mt-2 ${savedPhoto?.dataUrl ? '' : 'hidden'}">
+                                    ${isScreenView && savedPhoto?.dataUrl ? 
+                                        `<div class="relative inline-block border-2 border-gray-300 p-1 rounded bg-white shadow-sm">
+                                            <img src="${savedPhoto.dataUrl}" class="h-32 w-auto object-contain rounded" data-photo-id="${uniqueId}">
+                                            <button onclick="removeImage('${uniqueId}')" class="no-print absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">×</button>
+                                        </div>` 
+                                    : ''}
+                                </div>
+                            ` : ''}
+                        </td>
+                        <td class="p-2 w-12 text-center border-r">
+                             <input type="radio" name="${uniqueId}" value="yes" onchange="saveRadioState('${uniqueId}', this.value)" class="qc-checkbox form-radio text-blue-600">
+                        </td>
+                        <td class="p-2 w-12 text-center">
+                             <input type="radio" name="${uniqueId}" value="no" onchange="saveRadioState('${uniqueId}', this.value)" class="qc-checkbox form-radio text-red-600">
+                        </td>
+                    </tr>`;
+                }
+            });
+
+            html += `</tbody></table></div>`;
+            return html;
+        }
+
+
+        // --- State Management (using sessionStorage) ---
+        
+        function getRadioStateKey(id) {
+            return `radioState-${id}`;
+        }
+        
+        function saveRadioState(id, value) {
+            sessionStorage.setItem(getRadioStateKey(id), value);
+        }
+
+        function getRadioState(id) {
+            return sessionStorage.getItem(getRadioStateKey(id));
+        }
+
+        function clearRadioStates() {
+            checklistData.forEach(section => {
+                section.items.forEach(item => {
+                    const uniqueId = `${section.id}-${item.no.replace(/\./g, '-')}`;
+                    sessionStorage.removeItem(getRadioStateKey(uniqueId));
+                });
+            });
+        }
+        
+        function clearPhotoData() {
+            photoData.clear();
+        }
+
+        function restoreState(sectionId) {
+            const section = checklistData.find(s => s.id === sectionId);
+            if (!section) return;
+
+            section.items.forEach(item => {
+                const uniqueId = `${section.id}-${item.no.replace(/\./g, '-')}`;
+                const savedValue = getRadioState(uniqueId);
+                
+                if (savedValue) {
+                    const radio = document.querySelector(`input[name="${uniqueId}"][value="${savedValue}"]`);
+                    if (radio) {
+                        radio.checked = true;
+                    }
+                }
+                
+                // Photo preview restoration is handled directly in renderChecklist based on photoData map
+            });
+        }
+
+
+        // --- Clear Form Logic ---
+
+        function clearForm() {
+            // 1. Clear text inputs and textarea
+            document.getElementById('testerName').value = '';
+            document.getElementById('cabinetSn').value = '';
+            document.getElementById('controllerSn').value = '';
+            document.getElementById('finalComments').value = '';
+
+            // 2. Reset date and header date
+            initializeForm(); 
+            
+            // 3. Clear all stored radio button states and photo data
+            clearRadioStates();
+            clearPhotoData();
+            
+            // 4. Re-render the active tab to clear UI
+            switchTab(currentTabId); 
+
+            // Optional: Provide a quick visual feedback
+            const btn = document.querySelector('button[onclick="clearForm()"]');
+            btn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
+            btn.classList.add('bg-green-500');
+            setTimeout(() => {
+                btn.classList.add('bg-gray-500', 'hover:bg-gray-600');
+                btn.classList.remove('bg-green-500');
+            }, 300);
+        }
+
+        // --- Camera Logic ---
+        
+        async function startCamera(id) {
+            currentCameraId = id;
+            const modal = document.getElementById('camera-modal');
+            const video = document.getElementById('camera-feed');
+            
+            modal.classList.remove('hidden');
+
+            try {
+                // Request camera (prefer environment/rear camera on mobile)
+                videoStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                video.srcObject = videoStream;
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                const errorDiv = document.createElement('div');
+                errorDiv.className = "fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white p-3 rounded-lg shadow-xl z-[200]";
+                errorDiv.textContent = "Could not access camera. Please ensure you have allowed camera permissions.";
+                document.body.appendChild(errorDiv);
+                setTimeout(() => errorDiv.remove(), 5000);
+
+                closeCamera();
+            }
+        }
+
+        function closeCamera() {
+            const modal = document.getElementById('camera-modal');
+            const video = document.getElementById('camera-feed');
+            
+            // Stop all video tracks
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            video.srcObject = null;
+            modal.classList.add('hidden');
+            currentCameraId = null;
+        }
+
+        function takeSnapshot() {
+            if (!currentCameraId || !videoStream) return;
+
+            const video = document.getElementById('camera-feed');
+            const canvas = document.getElementById('camera-canvas');
+            const context = canvas.getContext('2d');
+
+            // Set canvas size to match video dimensions
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // Draw current video frame to canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Convert to data URL (JPEG format)
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+            // Update photoData state
+            const description = photoData.get(currentCameraId)?.description || 'Captured Photo';
+            photoData.set(currentCameraId, { description, dataUrl });
+
+            // Update DOM with the new image
+            displayCapturedImage(currentCameraId, dataUrl);
+            
+            closeCamera();
+        }
+
+        function displayCapturedImage(id, dataUrl) {
+            const previewContainer = document.getElementById(`preview-${id}`);
+            previewContainer.innerHTML = `
+                <div class="relative inline-block border-2 border-gray-300 p-1 rounded bg-white shadow-sm">
+                    <img src="${dataUrl}" class="h-32 w-auto object-contain rounded" data-photo-id="${id}">
+                    <button onclick="removeImage('${id}')" class="no-print absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">×</button>
+                </div>
+            `;
+            previewContainer.classList.remove('hidden');
+        }
+
+        function removeImage(id) {
+            const previewContainer = document.getElementById(`preview-${id}`);
+            previewContainer.innerHTML = '';
+            previewContainer.classList.add('hidden');
+            
+            // Clear data from state map
+            const existing = photoData.get(id);
+            if (existing) {
+                photoData.set(id, { description: existing.description, dataUrl: '' });
+            }
+        }
+
+
+        // --- PDF Generation Logic ---
+
+        function getReportHeaderHTML(sectionTitle) {
+            const reportDate = document.getElementById('reportDate').value;
+
+            return `
+                <!-- Header -->
+                <div class="border-b-2 border-gray-800 pb-4 mb-6 avoid-page-break">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h1 class="text-3xl font-bold text-gray-800">AUTOMATED TOOLBOX</h1>
+                            <h2 class="text-xl font-bold text-gray-600 mt-1">QC CHECK LIST (QC-ATB-0001)</h2>
+                        </div>
+                        <div class="text-right text-sm text-gray-500">
+                            <p>Rev. 00</p>
+                            <p>${reportDate}</p>
+                            <p class="font-bold text-red-600">SIGNIFI SOLUTIONS INC.</p>
+                        </div>
+                    </div>
+
+                    <!-- Form Fields -->
+                    <div class="grid grid-cols-2 gap-4 mt-6 bg-gray-50 p-4 rounded border border-gray-200">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Tester Name / Checked By</label>
+                            <input type="text" value="${document.getElementById('testerName').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Date</label>
+                            <input type="date" value="${reportDate}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Cabinet S/N</label>
+                            <input type="text" value="${document.getElementById('cabinetSn').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
+                        </div>
+                         <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Controller S/N / <span class="text-red-600">${sectionTitle}</span></label>
+                            <input type="text" value="${document.getElementById('controllerSn').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getFinalSignoffHTML() {
+             return `
+                <!-- Final Signoff -->
+                <div class="mt-8 pt-4 border-t-2 border-gray-300 avoid-page-break">
+                    <h3 class="font-bold text-lg mb-4">Final Sign-off</h3>
+                    <div class="flex justify-between items-end">
+                        <div class="w-1/2">
+                            <p class="mb-2 text-sm text-gray-600">Comments:</p>
+                            <textarea readonly class="w-full h-24 p-2 border border-gray-300 rounded bg-white resize-none">${document.getElementById('finalComments').value}</textarea>
+                        </div>
+                        <div class="w-1/3 text-center">
+                            <div class="border-b border-black mb-2 h-10"></div>
+                            <p class="text-sm font-bold">Signature</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function collectPhotosForActiveSection(sectionId) {
+            const photos = [];
+            
+            // Filter photos in state map based on the active section ID prefix
+            photoData.forEach((photo, id) => {
+                if (id.startsWith(sectionId) && photo.dataUrl) {
+                    photos.push(photo);
+                }
+            });
+            return photos;
+        }
+
+        function generatePhotoAppendixHtml(photos) {
+            if (photos.length === 0) return '';
+
+            let html = `
+                <div id="photo-appendix" class="no-print">
+                    <div class="photo-appendix-page bg-gray-100">
+                        <h1 class="text-3xl font-bold text-gray-800 pt-8">PHOTO APPENDIX</h1>
+                        <p class="text-lg text-gray-600 mb-8">Photos captured for this section during the QC process.</p>
+                        <div class="text-center h-full flex flex-col items-center justify-center">
+                            <h2 class="text-xl font-bold text-gray-700">Starting Photo Appendix...</h2>
+                        </div>
+                        <div class="text-right text-sm text-gray-500">
+                            <p>SIGNIFI SOLUTIONS INC.</p>
+                        </div>
+                    </div>
+            `;
+
+            photos.forEach((photo, index) => {
+                const dateString = new Date().toLocaleDateString();
+                html += `
+                    <div class="photo-appendix-page avoid-page-break"> 
+                        <div class="text-sm text-gray-500 w-full flex justify-between">
+                            <span>Photo Appendix</span>
+                            <span>Photo P-${index + 1}</span>
+                        </div>
+                        
+                        <div class="flex-grow flex flex-col items-center justify-center w-full">
+                            <h2 class="text-lg font-semibold text-gray-800 mb-6 px-4 py-2 rounded shadow-md border border-gray-300">${photo.description}</h2>
+                            <img src="${photo.dataUrl}" alt="QC Photo ${index + 1}" class="photo-container border-4 border-gray-300 rounded-lg shadow-xl" style="max-height: 200mm; max-width: 180mm;">
+                        </div>
+
+                        <div class="text-right text-sm text-gray-500 w-full">
+                            <p class="mt-4">Rev. 00 | ${dateString}</p>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            return html;
+        }
+
+        async function generatePDF() {
+            const activeSection = checklistData.find(s => s.id === currentTabId);
+            if (!activeSection) return;
+
+            // 1. Prepare the full report HTML structure for the PDF generator
+            const tempDiv = document.createElement('div');
+            tempDiv.className = 'a4-page';
+            
+            // Build the content of the active section, ensuring radio buttons are marked for print
+            const sectionContent = createChecklistHTML(activeSection, false); 
+            
+            // Assemble the final PDF content
+            const pdfContent = `
+                ${getReportHeaderHTML(activeSection.title)}
+                <div id="checklist-container">
+                    ${sectionContent}
+                </div>
+                ${getFinalSignoffHTML()}
+                <div id="photo-appendix-anchor"></div>
+            `;
+            tempDiv.innerHTML = pdfContent;
+
+            // 2. Collect Photos and Inject Appendix
+            const capturedPhotos = collectPhotosForActiveSection(currentTabId);
+            const appendixHtml = generatePhotoAppendixHtml(capturedPhotos);
+            const appendixAnchor = tempDiv.querySelector('#photo-appendix-anchor');
+            appendixAnchor.innerHTML = appendixHtml;
+            
+            // 3. Append tempDiv to body for html2pdf processing
+            document.body.appendChild(tempDiv);
+            
+            // 4. Filename construction
+            const cabinetSn = document.getElementById('cabinetSn').value.trim().replace(/[^a-zA-Z0-9-]/g, '') || '0';
+            const controllerSn = document.getElementById('controllerSn').value.trim().replace(/[^a-zA-Z0-9-]/g, '') || '0';
+            const sectionShortName = activeSection.title.split(' - ')[1] || activeSection.title;
+            const filename = `QC Check_${cabinetSn}_${controllerSn}_${sectionShortName.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`;
+            
+            // 5. PDF Generation configuration
+            const opt = {
+                margin:       [5, 5, 5, 5], 
+                filename:     filename, 
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak:    { mode: ['css', 'avoid-all', 'legacy'] }
+            };
+
+            // Indicate loading state
+            const btn = document.querySelector('button[onclick="generatePDF()"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Generating...';
+            btn.disabled = true;
+
+            try {
+                // Ensure checked radio buttons are marked correctly in the temporary DOM structure
+                tempDiv.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    if (getRadioState(radio.name) === radio.value) {
+                        radio.setAttribute('checked', 'checked');
+                    }
+                });
+                
+                await html2pdf().set(opt).from(tempDiv).save();
+            } catch (error) {
+                console.error("PDF generation failed:", error);
+                const errorDiv = document.createElement('div');
+                errorDiv.className = "fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white p-3 rounded-lg shadow-xl z-[200]";
+                errorDiv.textContent = "Error generating PDF. Check console for details.";
+                document.body.appendChild(errorDiv);
+                setTimeout(() => errorDiv.remove(), 5000);
+            } finally {
+                // 6. Cleanup
+                document.body.removeChild(tempDiv);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+        
+        // --- Run App ---
+        initializeApp();
+
+    </script>
+</body>
+</html>
