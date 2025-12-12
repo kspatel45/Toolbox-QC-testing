@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automated Toolbox QC Checklist</title>
+    <title>Automated Toolbox QC Checklist & Label Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
@@ -62,51 +62,122 @@
         }
         
         .avoid-page-break {
-            /* Ensures table rows (checklist items) and sections stay together */
             break-inside: avoid;
         }
 
+        /* Label Generator Styles */
+        .label-row {
+            display: grid;
+            grid-template-columns: 80px 1fr 1fr 1fr;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: #f9fafb;
+            border-radius: 4px;
+        }
+
+        /* Print Specifics for Epson LW-PX800 9mm Tape */
         @media print {
-            /* Hide non-print elements */
-            .no-print {
+            /* General Reset */
+            .no-print, .main-container, #camera-modal {
                 display: none !important;
             }
             body {
                 background: white;
+                margin: 0;
+                padding: 0;
             }
-            /* Reset for PDF generator */
+            
+            /* PDF Generator Reset */
             .a4-page {
                 box-shadow: none;
                 width: 100%;
                 min-height: auto; 
                 padding: 0;
             }
-            /* Styling for the Photo Appendix pages */
-            .photo-appendix-page {
-                page-break-before: always;
-                min-height: 297mm; /* Ensure full page height for A4 */
-                padding: 15mm;
+
+            /* Hide Appendix elements during standard print if any leak through */
+            .photo-appendix-page, div[id^="preview-"] {
+                display: none !important;
+            }
+
+            /* Label Printing Styles for 9mm Tape */
+            @page {
+                size: auto; /* Allow printer driver to handle roll width */
+                margin: 0mm; /* Crucial for label printers */
+            }
+
+            #label-print-container {
+                display: block !important;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            
+            .print-label-item {
+                /* Font Settings for 9mm height */
+                /* 9mm is approx 35px at 96DPI. Two lines need to be very compact. */
+
+		        transform: rotate(-90deg);
+                transform-origin: left top;
+		
+                font-family: 'Arial', sans-serif; 
+                font-size: 9px; /* Small font to fit 2 lines in 9mm */
+                line-height: 10px;
+                font-weight: normal;
+                
+                /* Layout */
                 display: flex;
                 flex-direction: column;
-                justify-content: space-between;
-                align-items: center;
+                justify-content: center;
+                gap: 0.3mm; /* Added flex gap for spacing */
+                
+                /* Cut settings */
+                page-break-after: always; /* Force cut/new label */
+
+                break-after: page;
+                
+                /* Spacing */
+                padding-left: 3mm; /* Lead-in space */
+                padding-right: 1mm;
+                padding-top: 1mm;
+                padding-bottom: 1mm;
+                
+                /* Ensure strictly black text */
+                color: black;
+                
+                /* Dimensions */
+                /* CHANGED: Use fit-content so label expands along the tape length (visual height) */
+                width: fit-content; 
+                /* Min height ensures the printer advances enough tape (20mm safe min) */
+                min-width: 20mm; 
+                min-height: 8mm; /* Maps to tape width due to rotation */
             }
-            .photo-container {
-                display: block;
-                max-width: 180mm; /* Fit inside margins */
-                max-height: 200mm;
-                object-fit: contain;
-                width: 100%;
-                height: 100%;
+            
+            .drawer-label-line1 {
+                white-space: nowrap;
+                margin-bottom: 1.5mm; /* Added specific margin for gap */
             }
-            /* Hide the thumbnail preview in the main checklist report */
-            div[id^="preview-"] {
-                display: none !important;
+            .drawer-label-line2 {
+                white-space: nowrap;
+            }
+            
+            /* New class for single-line fix labels */
+            .misc-label-text {
+                white-space: nowrap;
+                font-weight: bold;
+                /* No margin bottom needed as it is single line */
             }
         }
     </style>
 </head>
 <body>
+
+    <!-- Label Print Container (Hidden on Screen) -->
+    <div id="label-print-container" style="display: none;">
+        <!-- Labels injected here by JS -->
+    </div>
 
     <!-- Control Panel (Hidden in Print/PDF) -->
     <div class="fixed top-4 right-4 z-50 flex gap-2 no-print">
@@ -121,7 +192,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
             </svg>
-            Download PDF
+            Download Report PDF
         </button>
     </div>
 
@@ -157,7 +228,7 @@
                     <input type="text" id="testerName" class="w-full p-2 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500">
                 </div>
                 <div>
-                    <label for="reportDate" class="block text-sm font-bold text-gray-700 mb-1">Date</label>
+                    <label for="reportDate" class="block text-sm font-bold text-gray-700 mb-1">Date (Report)</label>
                     <input type="date" id="reportDate" class="w-full p-2 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500">
                 </div>
                 <div>
@@ -176,18 +247,16 @@
             <!-- Tabs will be generated here -->
         </div>
 
-        <!-- Report Content Container (for PDF generation content preparation) -->
+        <!-- Report Content Container -->
         <div id="report-content-wrapper">
-            <!-- The actual checklist content for the active tab is rendered here -->
+            <!-- Content renders here -->
         </div>
 
-        <!-- Final Comments (Visible on Screen) -->
-        <div class="mt-8 pt-4 border-t border-gray-300 no-print">
+        <!-- Final Comments (Only shown for QC tabs, handled in JS) -->
+        <div id="final-comments-section" class="mt-8 pt-4 border-t border-gray-300 no-print">
             <h3 class="font-bold text-lg mb-2 text-gray-800">Final Comments</h3>
             <textarea id="finalComments" rows="4" class="w-full p-3 border border-gray-300 rounded focus:ring-red-500 focus:border-red-500"></textarea>
         </div>
-
-
     </div>
 
     <script>
@@ -302,12 +371,17 @@
                     { no: "10.0", desc: "Overall front of cabinet.", photo: true },
                     { no: "11.0", desc: "All hardware and assembly as per specifications." }
                 ]
+            },
+            // Added Label Generator as a section
+            {
+                id: "label_generator",
+                title: "LABEL GENERATOR",
+                items: [] // Logic handled separately
             }
         ];
 
         // Global State
         let currentTabId = checklistData[0].id;
-        // Map for easy lookup of photo descriptions and storage of photo data
         const photoData = new Map(); 
         let currentCameraId = null;
         let videoStream = null;
@@ -317,21 +391,15 @@
         function initializeApp() {
             initializeForm();
             renderTabs();
-            // Render the first tab content
             switchTab(currentTabId);
         }
 
         function initializeForm() {
-            // Set Date in the header input field
             const today = new Date();
             const dateString = today.toISOString().split('T')[0];
-            
-            // These elements are now guaranteed to exist in the HTML body
             const reportDateInput = document.getElementById('reportDate');
             if (reportDateInput) {
                 reportDateInput.value = dateString;
-            } else {
-                 console.error("Initialization Error: reportDate element not found.");
             }
         }
 
@@ -343,8 +411,9 @@
             
             checklistData.forEach(section => {
                 const button = document.createElement('button');
+                const titleText = section.id === 'label_generator' ? 'LABELS' : (section.title.split(' - ')[1] || section.title);
                 button.className = `tab-button ${section.id === currentTabId ? 'active' : ''}`;
-                button.textContent = section.title.split(' - ')[1] || section.title; // Use a shorter title for the tab
+                button.textContent = titleText;
                 button.onclick = () => switchTab(section.id);
                 tabNav.appendChild(button);
             });
@@ -357,30 +426,33 @@
             document.querySelectorAll('.tab-button').forEach(btn => {
                 btn.classList.remove('active');
             });
-            const activeBtn = document.querySelector(`.tab-button:nth-child(${checklistData.findIndex(s => s.id === newTabId) + 1})`);
+            const activeBtn = Array.from(document.querySelectorAll('.tab-button'))
+                .find(b => b.textContent === (newTabId === 'label_generator' ? 'LABELS' : (checklistData.find(s => s.id === newTabId).title.split(' - ')[1] || checklistData.find(s => s.id === newTabId).title)));
             if (activeBtn) activeBtn.classList.add('active');
 
-            // Render the content of the new tab
-            renderChecklist(newTabId);
+            // Render Content
+            if (newTabId === 'label_generator') {
+                renderLabelGenerator();
+                document.getElementById('final-comments-section').style.display = 'none';
+            } else {
+                renderChecklist(newTabId);
+                document.getElementById('final-comments-section').style.display = 'block';
+            }
         }
 
-        // --- Checklist Rendering ---
+        // --- Checklist Rendering (Standard) ---
 
         function renderChecklist(sectionId) {
             const section = checklistData.find(s => s.id === sectionId);
             if (!section) return;
 
             const container = document.getElementById('report-content-wrapper');
-            // This is the on-screen display container
             container.innerHTML = createChecklistHTML(section, true); 
-
-            // Restore the saved radio button states and photo previews for the newly rendered tab
             restoreState(sectionId);
         }
 
-        // Generates the HTML for the checklist section, reusable for both screen and PDF
         function createChecklistHTML(section, isScreenView) {
-            const sectionClass = isScreenView ? '' : 'avoid-page-break'; // Only apply break avoid on the section level for PDF
+            const sectionClass = isScreenView ? '' : 'avoid-page-break';
             
             let html = `<div id="checklist-section-${section.id}" class="${sectionClass}">
                 <div class="bg-gray-800 text-white p-2 mb-2 rounded-t font-bold flex justify-between">
@@ -400,9 +472,7 @@
                     </tr>`;
                 } else {
                     const savedPhoto = photoData.get(uniqueId);
-                    // Store description for PDF map, even if no photo is taken yet
                     if (item.photo) {
-                        // Ensure a description placeholder is set in the map if it doesn't exist
                         if (!photoData.has(uniqueId)) {
                              photoData.set(uniqueId, { 
                                 description: `${section.title}: ${item.no}. ${item.desc}`, 
@@ -416,13 +486,19 @@
                         <td class="p-2 border-r">
                             <div>${item.desc}</div>
                             ${item.photo ? `
-                                <div class="mt-2 ${isScreenView ? 'no-print' : 'hidden'}">
+                                <div class="mt-2 flex flex-wrap gap-2 ${isScreenView ? 'no-print' : 'hidden'}">
                                     <button onclick="startCamera('${uniqueId}')" class="inline-flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-full text-xs font-semibold transition cursor-pointer">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M4 5a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V7a2 2 0 00-2-2h-1.586a1 1 0 01-.707-.293l-1.121-1.121A1 1 0 0011.172 3H8.828a1 1 0 00-.707.293L7.904 4.707A1 1 0 017.196 5H4zm-1 2a1 1 0 11-2 0 1 1 0 012 0zm11 6a4 4 0 100-8 4 4 0 000 8zm-4-1a3 3 0 110-6 3 3 0 010 6z" clip-rule="evenodd" />
                                         </svg>
                                         Take Photo
+                                    </button>
+                                    <input type="file" id="upload-${uniqueId}" class="hidden" accept="image/*" onchange="handleFileUpload(event, '${uniqueId}')">
+                                    <button onclick="document.getElementById('upload-${uniqueId}').click()" class="inline-flex items-center gap-2 bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded-full text-xs font-semibold transition cursor-pointer">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                                        </svg>
+                                        Upload
                                     </button>
                                 </div>
                                 <div id="preview-${uniqueId}" data-description="${item.no}. ${item.desc}" class="mt-2 ${savedPhoto?.dataUrl ? '' : 'hidden'}">
@@ -449,33 +525,169 @@
             return html;
         }
 
+        // --- LABEL GENERATOR LOGIC ---
 
-        // --- State Management (using sessionStorage) ---
+        function renderLabelGenerator() {
+            const container = document.getElementById('report-content-wrapper');
+            const today = new Date();
+            const dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth()+1).padStart(2, '0')}/${today.getFullYear()}`;
+
+            let html = `
+            <div class="bg-white p-4 rounded shadow-sm border border-gray-200">
+                <div class="bg-blue-600 text-white p-3 rounded-t font-bold mb-4">
+                    LABEL GENERATOR CONFIGURATION
+                </div>
+                
+                <!-- General Info -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">SO Number</label>
+                        <input type="text" id="lbl-so" class="w-full p-2 border border-gray-300 rounded focus:border-blue-500" placeholder="e.g. SO-12345">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Kiosk Serial Number</label>
+                        <input type="text" id="lbl-kiosk" class="w-full p-2 border border-gray-300 rounded focus:border-blue-500" placeholder="e.g. K-999">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Date (Auto)</label>
+                        <input type="text" id="lbl-date" value="${dateStr}" readonly class="w-full p-2 border border-gray-300 rounded bg-gray-100">
+                    </div>
+                </div>
+
+                <!-- Drawer Grid -->
+                <h3 class="font-bold text-gray-800 mb-2 border-b pb-1">Drawer Configuration</h3>
+                <div class="bg-gray-100 p-2 rounded mb-6">
+                    <div class="grid grid-cols-[80px_1fr_1fr_1fr] gap-2 mb-2 font-bold text-xs text-gray-600 uppercase">
+                        <div>Slot</div>
+                        <div>Drawer Number</div>
+                        <div>Height</div>
+                        <div>Density</div>
+                    </div>
+            `;
+
+            for(let i=1; i<=11; i++) {
+                html += `
+                    <div class="label-row grid grid-cols-[80px_1fr_1fr_1fr] gap-2 items-center mb-2">
+                        <div class="font-bold text-gray-500 text-sm">Slot ${i}</div>
+                        <select id="lbl-d-num-${i}" class="p-1 border rounded w-full text-sm">
+                            <option value="D${i}" selected>D${i}</option>
+                            <option value="NA">NA</option>
+                            ${Array.from({length:11}, (_, k)=> `<option value="D${k+1}">D${k+1}</option>`).join('')}
+                        </select>
+                        <select id="lbl-d-h-${i}" class="p-1 border rounded w-full text-sm">
+                            <option value="3H" selected>3H</option>
+                            <option value="6H">6H</option>
+                        </select>
+                        <select id="lbl-d-den-${i}" class="p-1 border rounded w-full text-sm">
+                            <option value="LD">LD</option>
+                            <option value="MD" selected>MD</option>
+                            <option value="HD">HD</option>
+                        </select>
+                    </div>
+                `;
+            }
+
+            html += `
+                </div>
+
+                <!-- Misc Labels -->
+                <h3 class="font-bold text-gray-800 mb-2 border-b pb-1">Additional Labels (Qty: 2 each)</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+                    ${[
+                        "12V Power", "24V Power", "NUC Power", "Touch Screen", 
+                        "Network Input", "USB HUB", "Barcode Scanner", "Display Power", 
+                        "Cabinet Controller", "Network Connection", "Network Output", "RFID Reader", "SO Number"
+                    ].map(l => `
+                        <label class="flex items-center space-x-2 p-2 border rounded bg-gray-50 cursor-pointer hover:bg-white">
+                            <input type="checkbox" class="misc-label-check form-checkbox h-4 w-4 text-blue-600" value="${l}" checked>
+                            <span class="text-sm">${l}</span>
+                        </label>
+                    `).join('')}
+                </div>
+
+                <div class="flex justify-center pt-4 border-t">
+                    <button onclick="printLabels()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded shadow-lg flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        PRINT LABELS
+                    </button>
+                </div>
+            </div>`;
+
+            container.innerHTML = html;
+        }
+
+        function printLabels() {
+            const container = document.getElementById('label-print-container');
+            const soNum = document.getElementById('lbl-so').value || 'Unknown SO';
+            const kioskSn = document.getElementById('lbl-kiosk').value || 'Unknown Kiosk';
+            const dateVal = document.getElementById('lbl-date').value;
+            
+            let printHtml = '';
+
+            // 1. Generate Drawer Labels
+            for(let i=1; i<=11; i++) {
+                const num = document.getElementById(`lbl-d-num-${i}`).value;
+                if(num !== 'NA') {
+                    const h = document.getElementById(`lbl-d-h-${i}`).value;
+                    const d = document.getElementById(`lbl-d-den-${i}`).value;
+                    
+                    // Format: Drawer-Height-Density
+                    const line1 = `${num}-${h}-${d}   ${dateVal}`;
+                    const line2 = kioskSn;
+
+                    printHtml += `
+                        <div class="print-label-item">
+                            <div class="drawer-label-line1">${line1}</div>
+                            <div class="drawer-label-line2">${line2}</div>
+                        </div>
+                    `;
+                }
+            }
+
+            // 2. Generate Misc Labels (2 Qty each)
+            const checkboxes = document.querySelectorAll('.misc-label-check:checked');
+            checkboxes.forEach(cb => {
+                const text = cb.value === 'SO Number' ? soNum : cb.value;
+                
+                // Print 2 copies
+                for(let j=0; j<2; j++) {
+                     printHtml += `
+                        <div class="print-label-item">
+                            <div class="misc-label-text">${text}</div>
+                        </div>
+                    `;
+                }
+            });
+
+            if(!printHtml) {
+                alert("No labels selected to print.");
+                return;
+            }
+
+            container.innerHTML = printHtml;
+            window.print();
+        }
+
+
+        // --- State Management ---
         
-        function getRadioStateKey(id) {
-            return `radioState-${id}`;
-        }
+        function getRadioStateKey(id) { return `radioState-${id}`; }
+        function saveRadioState(id, value) { sessionStorage.setItem(getRadioStateKey(id), value); }
+        function getRadioState(id) { return sessionStorage.getItem(getRadioStateKey(id)); }
         
-        function saveRadioState(id, value) {
-            sessionStorage.setItem(getRadioStateKey(id), value);
-        }
-
-        function getRadioState(id) {
-            return sessionStorage.getItem(getRadioStateKey(id));
-        }
-
         function clearRadioStates() {
             checklistData.forEach(section => {
                 section.items.forEach(item => {
+                    if(!item.no) return;
                     const uniqueId = `${section.id}-${item.no.replace(/\./g, '-')}`;
                     sessionStorage.removeItem(getRadioStateKey(uniqueId));
                 });
             });
         }
         
-        function clearPhotoData() {
-            photoData.clear();
-        }
+        function clearPhotoData() { photoData.clear(); }
 
         function restoreState(sectionId) {
             const section = checklistData.find(s => s.id === sectionId);
@@ -487,41 +699,27 @@
                 
                 if (savedValue) {
                     const radio = document.querySelector(`input[name="${uniqueId}"][value="${savedValue}"]`);
-                    if (radio) {
-                        radio.checked = true;
-                    }
+                    if (radio) radio.checked = true;
                 }
-                
-                // Photo preview restoration is handled directly in renderChecklist based on photoData map
             });
         }
-
 
         // --- Clear Form Logic ---
 
         function clearForm() {
-            // 1. Clear text inputs and textarea
             document.getElementById('testerName').value = '';
             document.getElementById('cabinetSn').value = '';
             document.getElementById('controllerSn').value = '';
             document.getElementById('finalComments').value = '';
-
-            // 2. Reset date and header date
             initializeForm(); 
-            
-            // 3. Clear all stored radio button states and photo data
             clearRadioStates();
             clearPhotoData();
-            
-            // 4. Re-render the active tab to clear UI
             switchTab(currentTabId); 
-
-            // Optional: Provide a quick visual feedback
+            
+            // Visual feedback
             const btn = document.querySelector('button[onclick="clearForm()"]');
-            btn.classList.remove('bg-gray-500', 'hover:bg-gray-600');
             btn.classList.add('bg-green-500');
             setTimeout(() => {
-                btn.classList.add('bg-gray-500', 'hover:bg-gray-600');
                 btn.classList.remove('bg-green-500');
             }, 300);
         }
@@ -532,23 +730,13 @@
             currentCameraId = id;
             const modal = document.getElementById('camera-modal');
             const video = document.getElementById('camera-feed');
-            
             modal.classList.remove('hidden');
-
             try {
-                // Request camera (prefer environment/rear camera on mobile)
-                videoStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: 'environment' } 
-                });
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 video.srcObject = videoStream;
             } catch (err) {
-                console.error("Error accessing camera:", err);
-                const errorDiv = document.createElement('div');
-                errorDiv.className = "fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white p-3 rounded-lg shadow-xl z-[200]";
-                errorDiv.textContent = "Could not access camera. Please ensure you have allowed camera permissions.";
-                document.body.appendChild(errorDiv);
-                setTimeout(() => errorDiv.remove(), 5000);
-
+                console.error("Camera Error:", err);
+                alert("Could not access camera.");
                 closeCamera();
             }
         }
@@ -556,8 +744,6 @@
         function closeCamera() {
             const modal = document.getElementById('camera-modal');
             const video = document.getElementById('camera-feed');
-            
-            // Stop all video tracks
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
@@ -569,62 +755,68 @@
 
         function takeSnapshot() {
             if (!currentCameraId || !videoStream) return;
-
             const video = document.getElementById('camera-feed');
             const canvas = document.getElementById('camera-canvas');
             const context = canvas.getContext('2d');
-
-            // Set canvas size to match video dimensions
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-
-            // Draw current video frame to canvas
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // Convert to data URL (JPEG format)
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-
-            // Update photoData state
             const description = photoData.get(currentCameraId)?.description || 'Captured Photo';
             photoData.set(currentCameraId, { description, dataUrl });
-
-            // Update DOM with the new image
             displayCapturedImage(currentCameraId, dataUrl);
-            
             closeCamera();
+        }
+
+        // --- File Upload Logic (NEW) ---
+
+        function handleFileUpload(event, uniqueId) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const dataUrl = e.target.result;
+                const description = photoData.get(uniqueId)?.description || 'Uploaded Photo';
+                
+                // Store in same map as camera photos so PDF generator picks it up automatically
+                photoData.set(uniqueId, { description, dataUrl });
+                displayCapturedImage(uniqueId, dataUrl);
+                
+                // Reset input so same file can be selected again if needed
+                event.target.value = ''; 
+            };
+            reader.readAsDataURL(file);
         }
 
         function displayCapturedImage(id, dataUrl) {
             const previewContainer = document.getElementById(`preview-${id}`);
-            previewContainer.innerHTML = `
-                <div class="relative inline-block border-2 border-gray-300 p-1 rounded bg-white shadow-sm">
-                    <img src="${dataUrl}" class="h-32 w-auto object-contain rounded" data-photo-id="${id}">
-                    <button onclick="removeImage('${id}')" class="no-print absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">×</button>
-                </div>
-            `;
-            previewContainer.classList.remove('hidden');
+            if(previewContainer) {
+                previewContainer.innerHTML = `
+                    <div class="relative inline-block border-2 border-gray-300 p-1 rounded bg-white shadow-sm">
+                        <img src="${dataUrl}" class="h-32 w-auto object-contain rounded" data-photo-id="${id}">
+                        <button onclick="removeImage('${id}')" class="no-print absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600">×</button>
+                    </div>
+                `;
+                previewContainer.classList.remove('hidden');
+            }
         }
 
         function removeImage(id) {
             const previewContainer = document.getElementById(`preview-${id}`);
             previewContainer.innerHTML = '';
             previewContainer.classList.add('hidden');
-            
-            // Clear data from state map
             const existing = photoData.get(id);
             if (existing) {
                 photoData.set(id, { description: existing.description, dataUrl: '' });
             }
         }
 
-
         // --- PDF Generation Logic ---
 
         function getReportHeaderHTML(sectionTitle) {
             const reportDate = document.getElementById('reportDate').value;
-
             return `
-                <!-- Header -->
                 <div class="border-b-2 border-gray-800 pb-4 mb-6 avoid-page-break">
                     <div class="flex justify-between items-start">
                         <div>
@@ -637,25 +829,11 @@
                             <p class="font-bold text-red-600">SIGNIFI SOLUTIONS INC.</p>
                         </div>
                     </div>
-
-                    <!-- Form Fields -->
                     <div class="grid grid-cols-2 gap-4 mt-6 bg-gray-50 p-4 rounded border border-gray-200">
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Tester Name / Checked By</label>
-                            <input type="text" value="${document.getElementById('testerName').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Date</label>
-                            <input type="date" value="${reportDate}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Cabinet S/N</label>
-                            <input type="text" value="${document.getElementById('cabinetSn').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
-                        </div>
-                         <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Controller S/N / <span class="text-red-600">${sectionTitle}</span></label>
-                            <input type="text" value="${document.getElementById('controllerSn').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white">
-                        </div>
+                        <div><label class="block text-sm font-bold text-gray-700 mb-1">Tester Name / Checked By</label><input type="text" value="${document.getElementById('testerName').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white"></div>
+                        <div><label class="block text-sm font-bold text-gray-700 mb-1">Date</label><input type="date" value="${reportDate}" readonly class="w-full p-2 border border-gray-300 rounded bg-white"></div>
+                        <div><label class="block text-sm font-bold text-gray-700 mb-1">Cabinet S/N</label><input type="text" value="${document.getElementById('cabinetSn').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white"></div>
+                         <div><label class="block text-sm font-bold text-gray-700 mb-1">Controller S/N / <span class="text-red-600">${sectionTitle}</span></label><input type="text" value="${document.getElementById('controllerSn').value}" readonly class="w-full p-2 border border-gray-300 rounded bg-white"></div>
                     </div>
                 </div>
             `;
@@ -663,7 +841,6 @@
 
         function getFinalSignoffHTML() {
              return `
-                <!-- Final Signoff -->
                 <div class="mt-8 pt-4 border-t-2 border-gray-300 avoid-page-break">
                     <h3 class="font-bold text-lg mb-4">Final Sign-off</h3>
                     <div class="flex justify-between items-end">
@@ -682,8 +859,6 @@
         
         function collectPhotosForActiveSection(sectionId) {
             const photos = [];
-            
-            // Filter photos in state map based on the active section ID prefix
             photoData.forEach((photo, id) => {
                 if (id.startsWith(sectionId) && photo.dataUrl) {
                     photos.push(photo);
@@ -694,84 +869,67 @@
 
         function generatePhotoAppendixHtml(photos) {
             if (photos.length === 0) return '';
-
             let html = `
                 <div id="photo-appendix" class="no-print">
                     <div class="photo-appendix-page bg-gray-100">
                         <h1 class="text-3xl font-bold text-gray-800 pt-8">PHOTO APPENDIX</h1>
-                        <p class="text-lg text-gray-600 mb-8">Photos captured for this section during the QC process.</p>
+                        <p class="text-lg text-gray-600 mb-8">Photos captured for this section.</p>
                         <div class="text-center h-full flex flex-col items-center justify-center">
                             <h2 class="text-xl font-bold text-gray-700">Starting Photo Appendix...</h2>
                         </div>
-                        <div class="text-right text-sm text-gray-500">
-                            <p>SIGNIFI SOLUTIONS INC.</p>
-                        </div>
+                        <div class="text-right text-sm text-gray-500"><p>SIGNIFI SOLUTIONS INC.</p></div>
                     </div>
             `;
-
             photos.forEach((photo, index) => {
                 const dateString = new Date().toLocaleDateString();
                 html += `
                     <div class="photo-appendix-page avoid-page-break"> 
-                        <div class="text-sm text-gray-500 w-full flex justify-between">
-                            <span>Photo Appendix</span>
-                            <span>Photo P-${index + 1}</span>
-                        </div>
-                        
+                        <div class="text-sm text-gray-500 w-full flex justify-between"><span>Photo Appendix</span><span>Photo P-${index + 1}</span></div>
                         <div class="flex-grow flex flex-col items-center justify-center w-full">
                             <h2 class="text-lg font-semibold text-gray-800 mb-6 px-4 py-2 rounded shadow-md border border-gray-300">${photo.description}</h2>
                             <img src="${photo.dataUrl}" alt="QC Photo ${index + 1}" class="photo-container border-4 border-gray-300 rounded-lg shadow-xl" style="max-height: 200mm; max-width: 180mm;">
                         </div>
-
-                        <div class="text-right text-sm text-gray-500 w-full">
-                            <p class="mt-4">Rev. 00 | ${dateString}</p>
-                        </div>
+                        <div class="text-right text-sm text-gray-500 w-full"><p class="mt-4">Rev. 00 | ${dateString}</p></div>
                     </div>
                 `;
             });
-
             html += `</div>`;
             return html;
         }
 
         async function generatePDF() {
+            if(currentTabId === 'label_generator') {
+                alert("Cannot generate QC PDF from Label Generator tab. Please switch to a QC section.");
+                return;
+            }
+
             const activeSection = checklistData.find(s => s.id === currentTabId);
             if (!activeSection) return;
 
-            // 1. Prepare the full report HTML structure for the PDF generator
             const tempDiv = document.createElement('div');
             tempDiv.className = 'a4-page';
             
-            // Build the content of the active section, ensuring radio buttons are marked for print
             const sectionContent = createChecklistHTML(activeSection, false); 
             
-            // Assemble the final PDF content
             const pdfContent = `
                 ${getReportHeaderHTML(activeSection.title)}
-                <div id="checklist-container">
-                    ${sectionContent}
-                </div>
+                <div id="checklist-container">${sectionContent}</div>
                 ${getFinalSignoffHTML()}
                 <div id="photo-appendix-anchor"></div>
             `;
             tempDiv.innerHTML = pdfContent;
 
-            // 2. Collect Photos and Inject Appendix
             const capturedPhotos = collectPhotosForActiveSection(currentTabId);
             const appendixHtml = generatePhotoAppendixHtml(capturedPhotos);
-            const appendixAnchor = tempDiv.querySelector('#photo-appendix-anchor');
-            appendixAnchor.innerHTML = appendixHtml;
+            tempDiv.querySelector('#photo-appendix-anchor').innerHTML = appendixHtml;
             
-            // 3. Append tempDiv to body for html2pdf processing
             document.body.appendChild(tempDiv);
             
-            // 4. Filename construction
             const cabinetSn = document.getElementById('cabinetSn').value.trim().replace(/[^a-zA-Z0-9-]/g, '') || '0';
             const controllerSn = document.getElementById('controllerSn').value.trim().replace(/[^a-zA-Z0-9-]/g, '') || '0';
             const sectionShortName = activeSection.title.split(' - ')[1] || activeSection.title;
             const filename = `QC Check_${cabinetSn}_${controllerSn}_${sectionShortName.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`;
             
-            // 5. PDF Generation configuration
             const opt = {
                 margin:       [5, 5, 5, 5], 
                 filename:     filename, 
@@ -781,37 +939,28 @@
                 pagebreak:    { mode: ['css', 'avoid-all', 'legacy'] }
             };
 
-            // Indicate loading state
             const btn = document.querySelector('button[onclick="generatePDF()"]');
             const originalText = btn.innerHTML;
             btn.innerHTML = 'Generating...';
             btn.disabled = true;
 
             try {
-                // Ensure checked radio buttons are marked correctly in the temporary DOM structure
                 tempDiv.querySelectorAll('input[type="radio"]').forEach(radio => {
                     if (getRadioState(radio.name) === radio.value) {
                         radio.setAttribute('checked', 'checked');
                     }
                 });
-                
                 await html2pdf().set(opt).from(tempDiv).save();
             } catch (error) {
                 console.error("PDF generation failed:", error);
-                const errorDiv = document.createElement('div');
-                errorDiv.className = "fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white p-3 rounded-lg shadow-xl z-[200]";
-                errorDiv.textContent = "Error generating PDF. Check console for details.";
-                document.body.appendChild(errorDiv);
-                setTimeout(() => errorDiv.remove(), 5000);
+                alert("Error generating PDF.");
             } finally {
-                // 6. Cleanup
                 document.body.removeChild(tempDiv);
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
         }
         
-        // --- Run App ---
         initializeApp();
 
     </script>
